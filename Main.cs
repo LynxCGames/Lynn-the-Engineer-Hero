@@ -18,6 +18,16 @@ using Il2CppAssets.Scripts.Models.Towers.Behaviors.Attack;
 using Il2CppAssets.Scripts.Models.Towers.Filters;
 using EngineerHero.Projectiles;
 using EngineerHero;
+using Il2CppAssets.Scripts.Models.Towers.Behaviors.Attack.Behaviors;
+using Il2CppAssets.Scripts.Unity.UI_New.InGame.Stats;
+using MelonLoader;
+using Il2CppAssets.Scripts.Simulation.Input;
+using BTD_Mod_Helper.Api.Components;
+using HarmonyLib;
+using Il2CppAssets.Scripts.Simulation.Behaviors;
+using Il2CppAssets.Scripts.Simulation.Display;
+using Il2CppAssets.Scripts.Simulation.SMath;
+using Lynn;
 
 namespace Lynn
 {
@@ -25,7 +35,7 @@ namespace Lynn
     {
         public override string BaseTower => TowerType.EngineerMonkey;
         public override string Name => "LynnHero";
-        public override int Cost => 1080;
+        public override int Cost => 1180;
         public override string DisplayName => "Lynn";
         public override string Title => "The Construction Worker";
         public override string Level1Description => "Lynn bashes Bloons with her wrench and creates mini worker sentries to help pop Bloons.";
@@ -36,34 +46,37 @@ namespace Lynn
         public override string Button => "Icon";
         public override string NameStyle => TowerType.Quincy;
         public override int MaxLevel => 20;
-        public override float XpRatio => 1.25f;
+        public override float XpRatio => 1.45f;
 
         public override void ModifyBaseTowerModel(TowerModel towerModel)
         {
-            towerModel.GetAttackModel().RemoveWeapon(towerModel.GetAttackModel().weapons[0]);
-
-            towerModel.range *= 1.5f;
-            towerModel.GetAttackModel().range = Game.instance.model.GetTower(TowerType.PatFusty).GetAttackModel().range;
+            towerModel.range = 60;
+            towerModel.GetAttackModel().range = 24;
 
             var wrench = Game.instance.model.GetTower(TowerType.PatFusty).GetAttackModel().weapons[0].Duplicate();
             wrench.projectile.GetDamageModel().immuneBloonProperties = BloonProperties.Lead | BloonProperties.Frozen;
-            towerModel.GetAttackModel().AddWeapon(wrench);
+            towerModel.GetAttackModel().weapons[0] = wrench;
 
-
-            foreach (var behavior in Game.instance.model.GetTowerFromId("EngineerMonkey-200").GetAttackModels().ToArray())
-            {
-                if (behavior.name.Contains("Spawner"))
-                {
-                    var spawner = behavior.Duplicate();
-                    spawner.range = towerModel.range;
-                    spawner.name = "Sentry_Place";
-                    spawner.weapons[0].projectile.RemoveBehavior<CreateTowerModel>();
-                    spawner.weapons[0].projectile.AddBehavior(new CreateTowerModel("SentryPlace", GetTowerModel<WorkerSentry>().Duplicate(), 0f, true, false, false, true, true));
-
-                    towerModel.AddBehavior(spawner);
-                }
-            }
+            var spawner = Game.instance.model.GetTowerFromId("EngineerMonkey-200").GetAttackModel(1).Duplicate();
+            spawner.GetBehavior<RandomPositionModel>().maxDistance = 60;
+            spawner.range = 60;
+            spawner.name = "Sentry_Place";
+            spawner.weapons[0].projectile.RemoveBehavior<CreateTowerModel>();
+            spawner.weapons[0].projectile.AddBehavior(new CreateTowerModel("SentryPlace", GetTowerModel<WorkerSentry>().Duplicate(), 0f, true, false, false, true, true));
+            towerModel.AddBehavior(spawner);
         }
+    }
+    public class helpingHand : ModBuffIcon
+    {
+        protected override int Order => 1;
+        public override string Icon => "Icon";
+        public override int MaxStackSize => 1;
+    }
+    public class sensor : ModBuffIcon
+    {
+        protected override int Order => 1;
+        public override string Icon => "SensorIcon";
+        public override int MaxStackSize => 1;
     }
     public class L2 : ModHeroLevel<Lynn>
     {
@@ -73,8 +86,9 @@ namespace Lynn
         public override void ApplyUpgrade(TowerModel towerModel)
         {
             TowerFilterModel engineer = new FilterInBaseTowerIdModel("BaseTowerFilter", new string[] { TowerType.EngineerMonkey });
-
-            towerModel.AddBehavior(new RateSupportModel("HelpingHand", 0.9f, true, "HelpingHandBuff", false, 1, new Il2CppReferenceArray<TowerFilterModel>(new TowerFilterModel[] { engineer }), "", ""));
+            var buff = new RateSupportModel("HelpingHand", 0.9f, true, "HelpingHandBuff", false, 1, new Il2CppReferenceArray<TowerFilterModel>(new TowerFilterModel[] { engineer }), "", "");
+            buff.ApplyBuffIcon<helpingHand>();
+            towerModel.AddBehavior(buff);
         }
     }
     public class L3 : ModHeroLevel<Lynn>
@@ -113,7 +127,7 @@ namespace Lynn
             var projectileModel = weaponModel.projectile;
             projectileModel.display = Game.instance.model.GetTower(TowerType.DartlingGunner, 5).GetAttackModel().weapons[0].projectile.display;
             projectileModel.GetBehavior<CreateProjectileOnExpireModel>().projectile.GetDamageModel().damage = 10;
-            projectileModel.GetBehavior<CreateProjectileOnExpireModel>().projectile.radius = Game.instance.model.GetTower(TowerType.BombShooter).GetAttackModel().weapons[0].projectile.GetBehavior<CreateProjectileOnContactModel>().projectile.radius;
+            projectileModel.GetBehavior<CreateProjectileOnExpireModel>().projectile.radius = Game.instance.model.GetTower(TowerType.BombShooter).GetAttackModel().weapons[0].projectile.GetBehavior<CreateProjectileOnContactModel>().projectile.radius * 1.5f;
             projectileModel.GetBehavior<Il2CppAssets.Scripts.Models.Towers.Projectiles.Behaviors.CreateEffectOnExpireModel>().effectModel = Game.instance.model.GetTower(TowerType.BombShooter).GetAttackModel().weapons[0].projectile.GetBehavior<CreateEffectOnContactModel>().effectModel;
             projectileModel.GetBehavior<CreateProjectileOnExpireModel>().projectile.GetDamageModel().immuneBloonProperties = BloonProperties.None;
             towerModel.AddBehavior(abilityModel);
@@ -145,19 +159,12 @@ namespace Lynn
 
         public override void ApplyUpgrade(TowerModel towerModel)
         {
-            foreach (var behavior in Game.instance.model.GetTowerFromId("EngineerMonkey-100").GetAttackModels().ToArray())
-            {
-                if (behavior.name.Contains("Spawner"))
-                {
-                    var spawner = behavior.Duplicate();
-                    spawner.name = "Beacon_Place";
-                    spawner.weapons[0].rate = 30;
-                    spawner.weapons[0].projectile.RemoveBehavior<CreateTowerModel>();
-                    spawner.weapons[0].projectile.AddBehavior(new CreateTowerModel("BeaconPlace", GetTowerModel<Beacon>().Duplicate(), 0f, true, false, false, true, true));
-
-                    towerModel.AddBehavior(spawner);
-                }
-            }
+            var spawner = Game.instance.model.GetTowerFromId("EngineerMonkey-100").GetAttackModel(1).Duplicate();
+            spawner.weapons[0].rate = 30;
+            spawner.name = "Beacon_Place";
+            spawner.weapons[0].projectile.RemoveBehavior<CreateTowerModel>();
+            spawner.weapons[0].projectile.AddBehavior(new CreateTowerModel("BeaconPlace", GetTowerModel<Beacon>().Duplicate(), 0f, true, false, false, true, true));
+            towerModel.AddBehavior(spawner);
         }
     }
     public class L6 : ModHeroLevel<Lynn>
@@ -227,6 +234,13 @@ namespace Lynn
             towerModel.GetBehavior<RateSupportModel>().multiplier = 0.85f;
 
             towerModel.GetAttackModel().weapons[0].rate /= 1.3f;
+            foreach (var attack in towerModel.GetAttackModels())
+            {
+                if (attack.name.Contains("Sentry_Place"))
+                {
+                    attack.weapons[0].rate /= 1.3f;
+                }
+            }
         }
     }
     public class L10 : ModHeroLevel<Lynn>
@@ -285,7 +299,7 @@ namespace Lynn
             {
                 if (attack.name.Contains("Sentry_Place"))
                 {
-                    attack.weapons[0].projectile.GetBehavior<CreateTowerModel>().tower.GetAttackModel().weapons[0].projectile.GetDamageModel().damage += 1;
+                    attack.weapons[0].projectile.GetBehavior<CreateTowerModel>().tower.GetAttackModel().weapons[0].projectile.GetDamageModel().damage += 2;
                     attack.weapons[0].projectile.GetBehavior<CreateTowerModel>().tower.GetAttackModel().weapons[0].projectile.GetDamageModel().immuneBloonProperties = BloonProperties.None;
                 }
             }
@@ -302,7 +316,7 @@ namespace Lynn
             {
                 if (attack.name.Contains("Sentry_Place"))
                 {
-                    attack.weapons[0].projectile.GetBehavior<CreateTowerModel>().tower.GetAttackModel().weapons[0].rate /= 1.5f;
+                    attack.weapons[0].projectile.GetBehavior<CreateTowerModel>().tower.GetAttackModel().weapons[0].rate /= 1.666f;
                 }
             }
         }
@@ -439,9 +453,7 @@ namespace Lynn
         {
             towerModel.GetBehavior<RateSupportModel>().multiplier = 0.70f;
 
-
             TowerFilterModel engineer = new FilterInBaseTowerIdModel("BaseTowerFilter", new string[] { TowerType.EngineerMonkey });
-
             towerModel.AddBehavior(new DamageSupportModel("HelpingHandDamage", true, 2, "HelpingHandDamageBuff", new Il2CppReferenceArray<TowerFilterModel>(new TowerFilterModel[] { engineer }), false, false, 0));
         }
     }
@@ -453,6 +465,13 @@ namespace Lynn
         public override void ApplyUpgrade(TowerModel towerModel)
         {
             towerModel.GetAttackModel().weapons[0].rate /= 1.5f;
+            foreach (var attack in towerModel.GetAttackModels())
+            {
+                if (attack.name.Contains("Sentry_Place"))
+                {
+                    attack.weapons[0].rate /= 1.5f;
+                }
+            }
 
 
             foreach (var attack in towerModel.GetAttackModels())
@@ -506,6 +525,7 @@ public class WorkerSentry : ModTower
     {
         towerModel.GetAttackModel().weapons[0].projectile.GetDamageModel().immuneBloonProperties = BloonProperties.Lead | BloonProperties.Frozen;
         towerModel.GetAttackModel().weapons[0].projectile.GetDamageModel().damage = 2;
+        towerModel.GetAttackModel().weapons[0].projectile.pierce = 3;
         towerModel.GetAttackModel().weapons[0].rate /= 1.25f;
 
         towerModel.isSubTower = true;
@@ -551,7 +571,9 @@ public class Beacon : ModTower
     public override void ModifyBaseTowerModel(TowerModel towerModel)
     {
         towerModel.RemoveBehavior<RangeSupportModel>();
-        towerModel.AddBehavior(new VisibilitySupportModel("", true, "VisionSupportZone", false, null, "", ""));
+        var buff = new VisibilitySupportModel("", true, "VisionSupportZone", false, null, "", "");
+        buff.ApplyBuffIcon<sensor>();
+        towerModel.AddBehavior(buff);
 
         towerModel.range = 54;
         towerModel.GetAttackModel().range = 54;
@@ -573,6 +595,26 @@ public class Beacon : ModTower
         public override void ModifyDisplayNode(UnityDisplayNode node)
         {
 
+        }
+    }
+}
+
+public static class patch
+{
+    [HarmonyPatch(typeof(InputManager), nameof(InputManager.GetRangeMeshes))]
+    internal static class InputManager_GetRangeMeshes
+    {
+        [HarmonyPostfix]
+        private static void Postfix(InputManager __instance, TowerModel towerModel, Vector3 position, ref Il2CppSystem.Collections.Generic.List<Mesh> __result)
+        {
+            if (towerModel != null && towerModel.baseId.Contains("Lynn"))
+            {
+                var mesh = RangeMesh.GetMeshStatically(__instance.Sim, position, towerModel.GetAttackModel().range,
+                    towerModel.ignoreBlockers);
+                mesh.isValid = true;
+                mesh.position = position;
+                __result.Add(mesh);
+            }
         }
     }
 }
